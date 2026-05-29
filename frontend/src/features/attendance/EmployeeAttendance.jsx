@@ -16,7 +16,14 @@ import {
   setEmployeeLimit,
   setEmployeePaginationInfo
 } from './attendanceSlice';
- 
+
+const formatHours = (storedMinutes) => {
+  if (storedMinutes === undefined || storedMinutes === null) return '--';
+  const h = Math.floor(storedMinutes / 60);
+  const m = Math.round(storedMinutes % 60);
+  return `${h}:${m.toString().padStart(2, '0')}`;
+};
+
 export default function EmployeeAttendance() {
   const dispatch = useDispatch();
   const {
@@ -120,20 +127,41 @@ export default function EmployeeAttendance() {
  
   const handleClockOut = async () => {
     dispatch(setEmployeeActionLoading(true));
-    try {
-      const response = await api.put('/attendance/clock-out');
-      if (response.data?.success) {
-        toast.success('Clocked out successfully! Thank you for your work.');
-        if (page === 1) {
-          fetchAttendance(true);
-        } else {
-          dispatch(setEmployeePage(1));
+
+    const performClockOut = async (coords = null) => {
+      try {
+        const payload = coords ? { latitude: coords.latitude, longitude: coords.longitude } : {};
+        const response = await api.put('/attendance/clock-out', payload);
+        if (response.data?.success) {
+          toast.success('Clocked out successfully! Thank you for your work.');
+          if (page === 1) {
+            fetchAttendance(true);
+          } else {
+            dispatch(setEmployeePage(1));
+          }
         }
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Clock-out failed.');
+      } finally {
+        dispatch(setEmployeeActionLoading(false));
       }
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Clock-out failed.');
-    } finally {
-      dispatch(setEmployeeActionLoading(false));
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          performClockOut({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          });
+        },
+        () => {
+          performClockOut(null);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    } else {
+      performClockOut(null);
     }
   };
  
@@ -180,7 +208,7 @@ export default function EmployeeAttendance() {
                     <CheckCircle size={28} />
                   </div>
                   <h4 className="text-base font-black text-slate-800">Shift Completed</h4>
-                  <p className="text-xs text-slate-500 font-medium">You have clocked out for today. Total hours logged: <span className="font-extrabold text-indigo-600">{todayRecord.totalHours || 0} hrs</span></p>
+                  <p className="text-xs text-slate-500 font-medium">You have clocked out for today. Total hours logged: <span className="font-extrabold text-indigo-600">{todayRecord.totalHours !== undefined ? formatHours(todayRecord.totalHours) : '0:00'} hrs</span></p>
                 </div>
               ) : (
                 <div className="text-center space-y-2">
@@ -304,15 +332,10 @@ export default function EmployeeAttendance() {
                     <td className="px-6 py-4">
                       <div>
                         {record.checkOutTime ? new Date(record.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                        {record.remarks && (
-                          <div className="text-[10px] text-rose-500 font-semibold mt-1 leading-normal max-w-[180px]" title={record.remarks}>
-                            {record.remarks}
-                          </div>
-                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 font-bold text-slate-700">
-                      {record.totalHours !== undefined ? `${record.totalHours} hrs` : '--'}
+                      {record.totalHours !== undefined ? `${formatHours(record.totalHours)} hrs` : '--'}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${record.status === 'present'

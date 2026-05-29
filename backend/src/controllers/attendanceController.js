@@ -1,6 +1,6 @@
 const Attendance = require("../models/Attendance");
 const Company = require("../models/Company");
-const mongoose = require("mongoose");
+
 const logger = require("../utils/logger");
 
 /**
@@ -110,16 +110,20 @@ exports.clockIn = async (req, res) => {
 };
 
 /**
- * Clocks out an employee for the day and calculates total hours worked.
- * @route `POST /api/attendance/clock-out`
+ * Validates geolocation (if required by company), marks the `checkOutTime`, computes `totalHours` in minutes, and resolves the day's attendance `status` to 'present', 'half-day', or 'absent'.
+ * @route `PUT /api/attendance/clock-out`
  * @param {Object} req
  * @param {Object} req.user - Active user context.
+ * @param {Object} req.body
+ * @param {number} [req.body.latitude] - The latitude of the user (from browser geolocation).
+ * @param {number} [req.body.longitude] - The longitude of the user (from browser geolocation).
  * @returns {Promise<Object>} JSON response confirming clock-out.
  */
 exports.clockOut = async (req, res) => {
     try {
         const userId = req.user._id;
         const companyId = req.company._id;
+        const { latitude, longitude } = req.body;
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -146,11 +150,44 @@ exports.clockOut = async (req, res) => {
             });
         }
 
+        // Fetch company settings to get office coordinates
+        const companyObj = await Company.findById(companyId);
+
+        if (companyObj && companyObj.latitude !== undefined && companyObj.latitude !== null && companyObj.longitude !== undefined && companyObj.longitude !== null) {
+            if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
+                return res.status(400).json({
+                    message: "Location access is required to clock-out for this company.",
+                    success: false,
+                    occurredAt: new Date().toISOString()
+                });
+            }
+
+            const distance = getDistance(latitude, longitude, companyObj.latitude, companyObj.longitude);
+            const radius = companyObj.proximityRadius || 200;
+
+            if (distance > radius) {
+                return res.status(400).json({
+                    message: `Cannot clock-out: You are not within the office boundary (Distance: ${Math.round(distance)}m, allowed: ${radius}m).`,
+                    success: false,
+                    occurredAt: new Date().toISOString()
+                });
+            }
+        }
+
         attendance.checkOutTime = new Date();
 
-        // Calculate total hours
+        // Calculate total hours in minutes
         const diffMs = attendance.checkOutTime - attendance.checkInTime;
-        attendance.totalHours = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+        const totalMins = Math.round(diffMs / (1000 * 60));
+        attendance.totalHours = totalMins;
+
+        if (totalMins >= 540) {
+            attendance.status = 'present';
+        } else if (totalMins >= 240) {
+            attendance.status = 'half-day';
+        } else {
+            attendance.status = 'absent';
+        }
 
         await attendance.save();
 
@@ -207,7 +244,8 @@ exports.getAttendanceHistory = async (req, res) => {
                 .populate('user', 'fullName email position identity')
                 .sort({ date: -1 })
                 .skip(skip)
-                .limit(limitNum);
+                .limit(limitNum)
+                .lean();
 
             const totalPages = Math.ceil(total / limitNum);
 
@@ -248,7 +286,7 @@ exports.getAttendanceHistory = async (req, res) => {
 
 /**
  * Validates the physical position of a clocked-in employee in real-time.
- * Automatically clocks out employee if they exit the boundary or refuse location access.
+ * * In the event the user is marked out of bounds or missing location, the system automatically writes a `checkOutTime`, calculates their final status based on `totalHours` in minutes, and considers them out for the rest of the day.
  * @route `POST /api/attendance/verify-proximity`
  * @param {Object} req
  * @param {Object} req.body
@@ -296,8 +334,16 @@ exports.verifyProximity = async (req, res) => {
         if (latitude === undefined || latitude === null || longitude === undefined || longitude === null) {
             attendance.checkOutTime = new Date();
             const diffMs = attendance.checkOutTime - attendance.checkInTime;
-            attendance.totalHours = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
-            attendance.remarks = "Auto-clocked out: Geolocation permission denied or unavailable.";
+            const totalMins = Math.round(diffMs / (1000 * 60));
+            attendance.totalHours = totalMins;
+
+            if (totalMins >= 540) {
+                attendance.status = 'present';
+            } else if (totalMins >= 240) {
+                attendance.status = 'half-day';
+            } else {
+                attendance.status = 'absent';
+            }
             await attendance.save();
 
             return res.status(200).json({
@@ -313,8 +359,16 @@ exports.verifyProximity = async (req, res) => {
         if (distance > radius) {
             attendance.checkOutTime = new Date();
             const diffMs = attendance.checkOutTime - attendance.checkInTime;
-            attendance.totalHours = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
-            attendance.remarks = `Auto-clocked out: Left office boundary (Distance: ${Math.round(distance)}m, allowed: ${radius}m).`;
+            const totalMins = Math.round(diffMs / (1000 * 60));
+            attendance.totalHours = totalMins;
+
+            if (totalMins >= 540) {
+                attendance.status = 'present';
+            } else if (totalMins >= 240) {
+                attendance.status = 'half-day';
+            } else {
+                attendance.status = 'absent';
+            }
             await attendance.save();
 
             return res.status(200).json({

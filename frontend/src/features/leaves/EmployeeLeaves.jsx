@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import api from '../../app/axiosInterceptors';
 import Pagination from '../../components/common/Pagination';
@@ -232,7 +232,7 @@ export default function EmployeeLeaves() {
                     <td className="px-6 py-4">
                       {new Date(leave.endDate).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 max-w-[200px] truncate text-slate-500 font-medium" title={leave.reason}>
+                    <td className="px-6 py-4 text-slate-500 font-medium" title={leave.reason}>
                       {leave.reason}
                     </td>
                     <td className="px-6 py-4">

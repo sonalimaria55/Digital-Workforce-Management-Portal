@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import api from '../../app/axiosInterceptors';
 import Pagination from '../../components/common/Pagination';
 import { toast } from 'react-toastify';
 import { validateForm } from '../../utils/validation';
 import { leaveSchemas } from './leaveSchemas';
-import { Loader2, User, FileSpreadsheet, CheckCircle2, XCircle, RefreshCcw, MessageSquare, Search, X } from 'lucide-react';
+import { Loader2, FileSpreadsheet, CheckCircle2, XCircle, RefreshCcw, MessageSquare, Search, X } from 'lucide-react';
 import {
   setOwnerLeaves,
   setOwnerTargetUserId,
@@ -106,7 +106,7 @@ const OwnerLeaves = () => {
       dispatch(setOwnerSearchLoading(true));
       try {
         const response = await api.get('/users/search-users-or-get-all', {
-          params: { query: searchQuery }
+          params: { query: searchQuery, statusFilter: 'both' }
         });
         dispatch(setOwnerSearchResults(response.data.data || []));
         dispatch(setOwnerShowDropdown(true));
@@ -311,7 +311,7 @@ const OwnerLeaves = () => {
                     </td>
                     <td className="px-4 py-4 text-slate-700 capitalize">{leave.type}</td>
                     <td className="px-4 py-4 text-slate-700">{new Date(leave.startDate).toLocaleDateString() || '--'} – {new Date(leave.endDate).toLocaleDateString() || '--'}</td>
-                    <td className="px-4 py-4 text-slate-500 font-medium max-w-[200px] truncate" title={leave.reason}>
+                    <td className="px-4 py-4 text-slate-500 font-medium" title={leave.reason}>
                       {leave.reason || '-'}
                     </td>
                     <td className="px-4 py-4 text-slate-700">
